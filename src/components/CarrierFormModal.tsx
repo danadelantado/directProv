@@ -188,9 +188,12 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
       evaluations: carrierToEdit?.evaluations ?? [],
       
       hubs: (carrierToEdit?.hubs && carrierToEdit.hubs.length > 0) ? carrierToEdit.hubs : generatedHubs,
-      
-      active: true,
-    };
+    active: true,
+  };
+
+  console.log("1. Qué texto se busco?", location.trim() || coverage.trim());
+  console.log("2. Que coordenadas regresa?", generatedHubs);
+  console.log("3. Objeto completo a guardar:", carrierData);
 
     onSave(carrierData);
     onClose();

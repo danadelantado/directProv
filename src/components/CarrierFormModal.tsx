@@ -12,43 +12,30 @@ interface CarrierFormModalProps {
 }
 
 const getCoordinatesFromText = async (locationText: string, defaultName: string): Promise<any[]> => {
+  let cleanText = (locationText || '').toLowerCase().replace(/patio|base|oficina/gi, '').trim();
+  if (cleanText.includes(',')) cleanText = cleanText.split(',')[0].trim();
+
   try {
-    // 1. Limpiamos el texto: quitamos palabras como "patio", "base" y dejamos solo la ciudad
-    let cleanText = locationText.toLowerCase().replace(/patio|base|oficina|bodega/gi, '').trim();
-    // Si escribieron algo con comas (ej. Monterrey, Nuevo León), tomamos solo "Monterrey" para no confundir al mapa
-    if (cleanText.includes(',')) {
-      cleanText = cleanText.split(',')[0].trim();
-    }
-
-    console.log("🔍 Buscando coordenadas en el mapa para:", cleanText);
-
-    // 2. Hacemos la búsqueda con parámetros extra para que la API no nos bloquee
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanText)}&limit=1`, {
-      headers: {
-        'Accept-Language': 'es-MX, es;q=0.9'
-      }
-    });
+    const API_KEY = '6f8a21c0f6274f4e940c2e20b117a6c9'; 
     
+    const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(cleanText)}&key=${API_KEY}&limit=1`);
     const data = await response.json();
 
-    if (data && data.length > 0) {
-      console.log("✅ ¡Ubicación encontrada!", data[0].lat, data[0].lon);
+    if (data && data.results && data.results.length > 0) {
+      const location = data.results[0].geometry;
       return [{
         name: defaultName || 'Patio Principal',
         city: cleanText.charAt(0).toUpperCase() + cleanText.slice(1),
         country: 'Detectado automáticamente',
-        lat: parseFloat(data[0].lat),
-        lng: parseFloat(data[0].lon),
+        lat: location.lat,
+        lng: location.lng,
         type: 'Patio / Base'
       }];
-    } else {
-      console.warn("⚠️ El mapa no encontró el lugar exacto. Usando ubicación por defecto (Torreón).");
     }
   } catch (error) {
-    console.error("❌ Error de conexión con el mapa:", error);
+    console.error("Error al contactar a OpenCage:", error);
   }
 
-  // Coordenadas por defecto si todo lo demás falla
   return [{
     name: 'Base Central',
     city: 'Torreón',

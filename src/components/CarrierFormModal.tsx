@@ -13,32 +13,50 @@ interface CarrierFormModalProps {
 
 const getCoordinatesFromText = async (locationText: string, defaultName: string): Promise<any[]> => {
   try {
-    const response = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}');
+    // 1. Limpiamos el texto: quitamos palabras como "patio", "base" y dejamos solo la ciudad
+    let cleanText = locationText.toLowerCase().replace(/patio|base|oficina|bodega/gi, '').trim();
+    // Si escribieron algo con comas (ej. Monterrey, Nuevo León), tomamos solo "Monterrey" para no confundir al mapa
+    if (cleanText.includes(',')) {
+      cleanText = cleanText.split(',')[0].trim();
+    }
+
+    console.log("🔍 Buscando coordenadas en el mapa para:", cleanText);
+
+    // 2. Hacemos la búsqueda con parámetros extra para que la API no nos bloquee
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanText)}&limit=1`, {
+      headers: {
+        'Accept-Language': 'es-MX, es;q=0.9'
+      }
+    });
+    
     const data = await response.json();
 
-    if (data && data.length > 0){
+    if (data && data.length > 0) {
+      console.log("✅ ¡Ubicación encontrada!", data[0].lat, data[0].lon);
       return [{
         name: defaultName || 'Patio Principal',
-        city: locationText.split(',')[0],
+        city: cleanText.charAt(0).toUpperCase() + cleanText.slice(1),
         country: 'Detectado automáticamente',
         lat: parseFloat(data[0].lat),
         lng: parseFloat(data[0].lon),
         type: 'Patio / Base'
       }];
+    } else {
+      console.warn("⚠️ El mapa no encontró el lugar exacto. Usando ubicación por defecto (Torreón).");
     }
+  } catch (error) {
+    console.error("❌ Error de conexión con el mapa:", error);
   }
-    catch (error){
-      console.error("No se pudieron obtener las coordenadas:", error);
-    }
 
-    return [{
-      name: 'Base Central',
-      city: 'Torreón',
-      country: 'México',
-      lat: 25.5428,
-      lng: -103.4068,
-      type: 'Patio / Base'
-    }];
+  // Coordenadas por defecto si todo lo demás falla
+  return [{
+    name: 'Base Central',
+    city: 'Torreón',
+    country: 'México',
+    lat: 25.5428,
+    lng: -103.4068,
+    type: 'Patio / Base'
+  }];
 };
 
 export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({

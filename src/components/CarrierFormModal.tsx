@@ -15,8 +15,9 @@ const getCoordinatesFromText = async (locationText: string, defaultName: string)
   let cleanText = (locationText || '').toLowerCase().replace(/patio|base|oficina|bodega/gi, '').trim();
 
   try {
-    const API_KEY = '6f8a21c0f6274f4e940c2e20b117a6c9';
-    const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(cleanText)}&key=${API_KEY}&limit=1`);
+    const API_KEY = '6f8a21c0f6274f4e940c2e20b117a6c9'; 
+    
+    const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(cleanText)}&key=${API_KEY}&limit=1&countrycode=mx,us`);
     const data = await response.json();
 
     if (data && data.results && data.results.length > 0) {

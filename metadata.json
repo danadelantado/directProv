@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Remix Performer Logistics - Catálogo de Carriers",
+  "description": "Sistema de gestión y selección inteligente de transportistas terrestres, aéreos y marítimos de Performer Logistics según tiempo de respuesta y cobertura.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

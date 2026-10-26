@@ -11,6 +11,36 @@ interface CarrierFormModalProps {
   onDelete?: (carrierId: string, carrierName: string) => void;
 }
 
+const getCoordinatesFromText = async (locationText: string, defaultName: string): Promise<any[]> => {
+  try {
+    const response = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}');
+    const data = await response.json();
+
+    if (data && data.length > 0){
+      return [{
+        name: defaultName || 'Patio Principal',
+        city: locationText.split(',')[0],
+        country: 'Detectado automáticamente',
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon),
+        type: 'Patio / Base'
+      }];
+    }
+  }
+    catch (error){
+      console.error("No se pudieron obtener las coordenadas:", error);
+    }
+
+    return [{
+      name: 'Base Central',
+      city: 'Torreón',
+      country: 'México',
+      lat: 25.5428,
+      lng: -103.4068,
+      type: 'Patio / Base'
+    }];
+};
+
 export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
   carrierToEdit,
   isOpen,
@@ -93,11 +123,11 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (!name.trim() || !coverage.trim()) return;
 
-    // Determine default regions based on coverage string
     const regions: GeographicRegion[] = [];
     const lower = coverage.toLowerCase();
     if (lower.includes('usa') || lower.includes('mex')) regions.push('USA - MEX');
@@ -121,6 +151,9 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
       .split('\n')
       .map((s) => s.trim())
       .filter(Boolean);
+
+    const textToSearch = location.trim() || coverage.trim() || 'Torreón'; 
+    const generatedHubs = await getCoordinatesFromText(textToSearch, name.trim());
 
     const carrierData: Carrier = {
       ...(carrierToEdit || {}),
@@ -148,7 +181,9 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
       regions: regions.length > 0 ? regions : ['USA - MEX'],
       scoreOutOf10: carrierToEdit?.scoreOutOf10 ?? 0,
       evaluations: carrierToEdit?.evaluations ?? [],
-      hubs: carrierToEdit?.hubs,
+      
+      hubs: (carrierToEdit?.hubs && carrierToEdit.hubs.length > 0) ? carrierToEdit.hubs : generatedHubs,
+      
       active: true,
     };
 
@@ -305,7 +340,7 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
               <label className="block font-bold text-slate-800 mb-1">Patios / Bases / Instalaciones</label>
               <input
                 type="text"
-                placeholder="Ej. Patio Manzanillo Colima, Base Laredo TX"
+                placeholder="Ej. Torreón, Coahuila; Laredo, Texas; Madrid, España"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#310052]"

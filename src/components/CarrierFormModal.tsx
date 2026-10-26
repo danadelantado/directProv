@@ -12,12 +12,10 @@ interface CarrierFormModalProps {
 }
 
 const getCoordinatesFromText = async (locationText: string, defaultName: string): Promise<any[]> => {
-  let cleanText = (locationText || '').toLowerCase().replace(/patio|base|oficina/gi, '').trim();
-  if (cleanText.includes(',')) cleanText = cleanText.split(',')[0].trim();
+  let cleanText = (locationText || '').toLowerCase().replace(/patio|base|oficina|bodega/gi, '').trim();
 
   try {
-    const API_KEY = '6f8a21c0f6274f4e940c2e20b117a6c9'; 
-    
+    const API_KEY = '6f8a21c0f6274f4e940c2e20b117a6c9';
     const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(cleanText)}&key=${API_KEY}&limit=1`);
     const data = await response.json();
 
@@ -25,7 +23,7 @@ const getCoordinatesFromText = async (locationText: string, defaultName: string)
       const location = data.results[0].geometry;
       return [{
         name: defaultName || 'Patio Principal',
-        city: cleanText.charAt(0).toUpperCase() + cleanText.slice(1),
+        city: locationText.split(',')[0].trim().charAt(0).toUpperCase() + locationText.split(',')[0].trim().slice(1),
         country: 'Detectado automáticamente',
         lat: location.lat,
         lng: location.lng,

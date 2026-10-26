@@ -17,15 +17,20 @@ const getCoordinatesFromText = async (locationText: string, defaultName: string)
   try {
     const API_KEY = '6f8a21c0f6274f4e940c2e20b117a6c9'; 
     
-    const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(cleanText)}&key=${API_KEY}&limit=1&countrycode=mx,us`);
+    const response = await fetch(`https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(cleanText)}&key=${API_KEY}&limit=1`);
     const data = await response.json();
 
     if (data && data.results && data.results.length > 0) {
       const location = data.results[0].geometry;
+      const components = data.results[0].components;
+      
+      let realCity = components.city || components.town || components.county || locationText.split(',')[0].trim();
+      let realCountry = components.country || 'Desconocido';
+
       return [{
         name: defaultName || 'Patio Principal',
-        city: locationText.split(',')[0].trim().charAt(0).toUpperCase() + locationText.split(',')[0].trim().slice(1),
-        country: 'Detectado automáticamente',
+        city: realCity.charAt(0).toUpperCase() + realCity.slice(1),
+        country: realCountry,
         lat: location.lat,
         lng: location.lng,
         type: 'Patio / Base'

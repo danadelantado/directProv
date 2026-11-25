@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient';
 
 export type UserRole = 'admin' | 'visor';
 
@@ -11,12 +12,14 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   users: User[];
-  login: (email: string, pass: string) => boolean;
-  register: (email: string, name: string, pass: string) => boolean;
   logout: () => void;
   changeRole: (email: string, newRole: UserRole) => void;
-  resetPassword: (email: string, newPass: string) => boolean;
   deleteUser: (email: string) => void;
+  
+  // Funciones heredadas de UI
+  login: (email: string, pass: string) => boolean;
+  register: (email: string, name: string, pass: string) => boolean;
+  resetPassword: (email: string, newPass: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,83 +28,90 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
 
-  useEffect(() => {
-    const storedUsers = localStorage.getItem('app_secure_users');
-    if (storedUsers && JSON.parse(storedUsers).length > 0){
-      setUsers(JSON.parse(storedUsers));
+  // Función maestra: Verifica si el usuario existe en la "Lista VIP" (perfiles)
+  const checkAccess = async (sessionUser: any) => {
+    const { data: perfil, error } = await supabase
+      .from('perfiles')
+      .select('*')
+      .eq('email', sessionUser.email)
+      .single();
+
+    if (perfil) {
+      setUser({
+        email: perfil.email,
+        name: perfil.name,
+        role: perfil.role,
+      });
     } else {
-      const defaultUsers = [
-        {
-          email: 'karla@performerlogistics.com.mx',
-          name: 'Ana Karla',
-          password: btoa('karper26'),
-          role: 'admin'
-        }
-      ];
-      localStorage.setItem('app_secure_users', JSON.stringify(defaultUsers));
-      setUsers(defaultUsers as any);
+      await supabase.auth.signOut();
+      setUser(null);
+      throw new Error("Esta cuenta ha sido desactivada o eliminada por el administrador.");
     }
+  };
+
+  useEffect(() => {
+    // 1. Revisar sesión activa
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) checkAccess(session.user);
+    });
+
+    // 2. Escuchar cambios
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) checkAccess(session.user);
+      else setUser(null);
+    });
+
+    // 3. Cargar la lista completa de usuarios para tu AdminPanel
+    const cargarUsuarios = async () => {
+      const { data } = await supabase.from('perfiles').select('*');
+      if (data) setUsers(data as User[]);
+    };
+    
+    cargarUsuarios();
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = (email: string, pass: string) => {
-    const storedUsers = JSON.parse(localStorage.getItem('app_secure_users') || '[]');
-    const hashedPass = btoa(pass); 
-    const foundUser = storedUsers.find((u: any) => u.email === email && u.password === hashedPass);
-    
-    if (foundUser) {
-      setUser({ email: foundUser.email, name: foundUser.name, role: foundUser.role });
-      return true;
+  const logout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  // Función real para cambiar roles desde el Admin Panel
+  const changeRole = async (email: string, newRole: UserRole) => {
+    const { error } = await supabase
+      .from('perfiles')
+      .update({ role: newRole })
+      .eq('email', email);
+
+    if (!error) {
+      setUsers((prev) => prev.map((u) => (u.email === email ? { ...u, role: newRole } : u)));
+      if (user?.email === email) setUser({ ...user, role: newRole });
+    } else {
+      console.error("Error al cambiar rol:", error);
     }
-    return false;
   };
 
-  const register = (email: string, name: string, pass: string) => {
-    const storedUsers = JSON.parse(localStorage.getItem('app_secure_users') || '[]');
-    if (storedUsers.some((u: any) => u.email === email)) return false;
+  // Función real para eliminar usuarios desde el Admin Panel
+  const deleteUser = async (email: string) => {
+    const confirmar = window.confirm(`¿Estás segura de eliminar permanentemente el acceso de ${email}?`);
+    if (!confirmar) return;
 
-    const assignedRole: UserRole = storedUsers.length === 0 ? 'admin' : 'visor';
-    const newUser = { email, name, password: btoa(pass), role: assignedRole };
-    const updatedUsers = [...storedUsers, newUser];
-    
-    localStorage.setItem('app_secure_users', JSON.stringify(updatedUsers));
-    setUsers(updatedUsers);
-    setUser({ email, name, role: assignedRole });
-    return true;
+    const { error } = await supabase
+      .from('perfiles')
+      .delete()
+      .eq('email', email);
+
+    if (!error) {
+      setUsers((prev) => prev.filter((u) => u.email !== email));
+      if (user?.email === email) logout();
+    } else {
+      console.error("Error al eliminar usuario:", error);
+    }
   };
 
-  const changeRole = (email: string, newRole: UserRole) => {
-    const storedUsers = JSON.parse(localStorage.getItem('app_secure_users') || '[]');
-    const updatedUsers = storedUsers.map((u: any) => u.email === email ? { ...u, role: newRole } : u);
-    localStorage.setItem('app_secure_users', JSON.stringify(updatedUsers));
-    setUsers(updatedUsers);
-    if (user?.email === email) setUser({ ...user, role: newRole });
-  };
-
-  const resetPassword = (email: string, newPass: string) => {
-    const storedUsers = JSON.parse(localStorage.getItem('app_secure_users') || '[]');
-    const userExists = storedUsers.some((u: any) => u.email === email);
-    
-    if (!userExists) return false;
-
-    const updatedUsers = storedUsers.map((u: any) => 
-      u.email === email ? { ...u, password: btoa(newPass) } : u
-    );
-    localStorage.setItem('app_secure_users', JSON.stringify(updatedUsers));
-    setUsers(updatedUsers);
-    return true;
-  };
-
-  const deleteUser = (email: string) => {
-    const storedUsers = JSON.parse(localStorage.getItem('app_secure_users') || '[]');
-    const updatedUsers = storedUsers.filter((u: any) => u.email !== email);
-
-    localStorage.setItem('app_secure_users', JSON.stringify(updatedUsers));
-    setUsers(updatedUsers);
-
-    if (user?.email === email) logout();
-  };
-
-  const logout = () => setUser(null);
+  const login = () => true;
+  const register = () => true;
+  const resetPassword = () => true;
 
   return (
     <AuthContext.Provider value={{ user, users, login, register, logout, changeRole, resetPassword, deleteUser }}>

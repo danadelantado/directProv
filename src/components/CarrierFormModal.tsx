@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Carrier, TransportMode, ContactChannel, GeographicRegion, AltaEntity } from '../types';
 import { X, Save, ShieldAlert, Truck, MapPin, Route, ShieldCheck, Mail, Trash2, Building2, MessageSquare } from 'lucide-react';
 import { PerformerLogo } from './PerformerLogo';
+import { supabase } from '../supabaseClient';
 
 interface CarrierFormModalProps {
   carrierToEdit: Carrier | null;
@@ -24,7 +25,7 @@ const getCoordinatesFromText = async (locationText: string, defaultName: string)
       const location = data.results[0].geometry;
       const components = data.results[0].components;
       
-      let realCity = components.city || components.town || components.county || locationText.split(',')[0].trim();
+      let realCity = components.city || components.town || components.country || locationText.split(',')[0].trim();
       let realCountry = components.country || 'Desconocido';
 
       return [{
@@ -195,12 +196,29 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
     active: true,
   };
 
-  console.log("1. Qué texto se busco?", location.trim() || coverage.trim());
-  console.log("2. Que coordenadas regresa?", generatedHubs);
-  console.log("3. Objeto completo a guardar:", carrierData);
+  const guardarEnNube = async () => {
+    const { error } = await supabase
+      .from('carriers')
+      .insert([
+        {
+          id: carrierData.id,
+          name: carrierData.name,
+          data: carrierData
+        }
+      ]);
 
-    onSave(carrierData);
-    onClose();
+      if (error) {
+        console.error("Error guardando en Supabase:", error);
+        alert("Hubo un error al guardar en la nube.");
+      } else {
+        console.log("¡Proveedor guardado en la nube exitosamente!");
+        onSave(carrierData);
+        onClose();
+      }
+  };
+
+  guardarEnNube();
+  
   };
 
   return (
@@ -234,7 +252,7 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
           
           {/* Alta con: Performer / Kosmos / Ambos */}
           <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
-            <label className="block font-black text-slate-900 mb-2 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+            <label className= "font-black text-slate-900 mb-2 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
               <Building2 className="w-4 h-4 text-[#310052]" />
               <span>¿Dado de Alta con cuál entidad?</span>
             </label>
@@ -318,7 +336,7 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
 
           {/* ID WCA */}
           <div>
-            <label className="block font-bold text-slate-800 mb-1 flex items-center justify-between">
+            <label className="font-bold text-slate-800 mb-1 flex items-center justify-between">
               <span>ID / Membresía Oficial WCA (Opcional)</span>
               <span className="text-[10px] text-amber-700 font-medium">Para agentes de la red internacional WCA</span>
             </label>
@@ -334,7 +352,7 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
           {/* Cobertura y Ubicación */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-slate-800 mb-1 flex items-center space-x-1">
+              <label className="font-bold text-slate-800 mb-1 flex items-center space-x-1">
                 <MapPin className="w-3.5 h-3.5 text-amber-600" />
                 <span>Cobertura Geográfica *</span>
               </label>
@@ -374,7 +392,7 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
 
           {/* Unidades & Flota */}
           <div>
-            <label className="block font-bold text-slate-800 mb-1 flex items-center space-x-1">
+            <label className="font-bold text-slate-800 mb-1 flex items-center space-x-1">
               <Truck className="w-3.5 h-3.5 text-[#310052]" />
               <span>Tipo de Unidades & Flota (Una por línea)</span>
             </label>
@@ -389,7 +407,7 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
 
           {/* Rutas Frecuentes */}
           <div>
-            <label className="block font-bold text-slate-800 mb-1 flex items-center space-x-1">
+            <label className="font-bold text-slate-800 mb-1 flex items-center space-x-1">
               <Route className="w-3.5 h-3.5 text-sky-600" />
               <span>Rutas Frecuentes / Corredores (Una por línea)</span>
             </label>
@@ -404,7 +422,7 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
 
           {/* Servicios Ofrecidos */}
           <div>
-            <label className="block font-bold text-slate-800 mb-1 flex items-center space-x-1">
+            <label className="font-bold text-slate-800 mb-1 flex items-center space-x-1">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
               <span>Servicios Especiales & Equipamiento (Uno por línea)</span>
             </label>
@@ -477,7 +495,7 @@ export const CarrierFormModal: React.FC<CarrierFormModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-slate-800 mb-1 flex items-center space-x-1">
+              <label className="font-bold text-slate-800 mb-1 flex items-center space-x-1">
                 <Mail className="w-3.5 h-3.5 text-[#310052]" />
                 <span>Correos Electrónicos</span>
               </label>

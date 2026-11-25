@@ -1,55 +1,33 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { PerformerLogo } from './PerformerLogo';
-
-const CORPORATE_DOMAINS = ['@performerlogistics.com.mx', '@looper.com.mx'];
+import { supabase } from '../supabaseClient';
 
 export const ResetPassword: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchToLogin }) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [email, setEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [generatedCode, setGeneratedCode] = useState('');
-  const [enteredCode, setEnteredCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [error, setError] = useState('');
-  
-  const { resetPassword, users } = useAuth();
 
-  const handleRequestCode = (e: React.FormEvent) => {
+  const handleResetRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
+    setLoading(true);
 
-    const userExists = users.some(u => u.email === email);
-    if (!userExists) {
-      setError('No existe una cuenta con este correo.');
-      return;
+    try {
+      // Pedimos a Supabase que mande el correo de recuperación real
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin, // Redirige de vuelta a tu app al hacer clic en el correo
+      });
+
+      if (resetError) throw resetError;
+
+      setSuccessMessage('¡Correo enviado! Revisa tu bandeja de entrada para restablecer tu contraseña.');
+    } catch (err: any) {
+      setError(err.message || 'No se pudo enviar el correo de recuperación. Verifica el correo e intenta de nuevo.');
+    } finally {
+      setLoading(false);
     }
-
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
-    setGeneratedCode(code);
-    setStep(2);
-    alert(`SIMULACIÓN DE CORREO (Restablecer Contraseña)\n\nPara: ${email}\nCódigo de recuperación: ${code}`);
-  };
-
-  const handleVerifyCode = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (enteredCode !== generatedCode) {
-      setError('Código incorrecto.');
-      return;
-    }
-    setStep(3);
-    setError('');
-  };
-
-  const handleReset = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPassword.length < 6) {
-      setError('La nueva contraseña debe tener al menos 6 caracteres.');
-      return;
-    }
-    
-    resetPassword(email, newPassword);
-    alert('Contraseña actualizada con éxito. Inicia sesión con tus nuevas credenciales.');
-    onSwitchToLogin();
   };
 
   return (
@@ -60,40 +38,50 @@ export const ResetPassword: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwi
         </div>
         
         <h2 className="text-xl font-black text-center text-[#310052] mb-6">
-          {step === 1 ? 'Recuperar Contraseña' : step === 2 ? 'Verificar Código' : 'Nueva Contraseña'}
+          Recuperar Contraseña
         </h2>
         
-        {error && <div className="mb-4 p-3 bg-rose-50 text-rose-600 rounded-lg text-sm text-center font-bold">{error}</div>}
-
-        {step === 1 && (
-          <form onSubmit={handleRequestCode} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Correo Empresarial</label>
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl" />
-            </div>
-            <button type="submit" className="w-full mt-4 py-3 bg-[#310052] text-white font-bold rounded-xl shadow-md">Enviar código</button>
-          </form>
+        {error && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold text-center">
+            {error}
+          </div>
         )}
 
-        {step === 2 && (
-          <form onSubmit={handleVerifyCode} className="space-y-4">
-            <p className="text-sm text-slate-600 text-center">Código enviado a <strong>{email}</strong></p>
-            <input type="text" required maxLength={4} value={enteredCode} onChange={(e) => setEnteredCode(e.target.value)} className="w-full px-4 py-3 text-center text-2xl font-black bg-slate-50 border rounded-xl" placeholder="0000" />
-            <button type="submit" className="w-full py-3 bg-[#D2E603] text-[#310052] font-black rounded-xl shadow-md">Verificar</button>
-          </form>
+        {successMessage && (
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold text-center">
+            {successMessage}
+          </div>
         )}
 
-        {step === 3 && (
-          <form onSubmit={handleReset} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Nueva Contraseña</label>
-              <input type="password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl" />
-            </div>
-            <button type="submit" className="w-full py-3 bg-[#310052] text-white font-bold rounded-xl shadow-md">Guardar y Entrar</button>
-          </form>
-        )}
+        <form onSubmit={handleResetRequest} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Correo Empresarial</label>
+            <input 
+              type="email" 
+              required 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
+              className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#310052]" 
+              placeholder="tu.correo@performerlogistics.com.mx"
+              disabled={loading}
+            />
+          </div>
+          
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full mt-2 py-3 bg-[#310052] text-white font-bold rounded-xl shadow-md hover:bg-[#431366] transition cursor-pointer disabled:opacity-50 text-xs"
+          >
+            {loading ? 'Enviando...' : 'Enviar instrucciones al correo'}
+          </button>
+        </form>
 
-        <button onClick={onSwitchToLogin} className="w-full mt-6 text-sm text-[#310052] font-bold hover:underline">Volver a Iniciar Sesión</button>
+        <button 
+          onClick={onSwitchToLogin} 
+          className="w-full mt-6 text-sm text-[#310052] font-bold hover:underline cursor-pointer text-center block"
+        >
+          Volver a Iniciar Sesión
+        </button>
       </div>
     </div>
   );

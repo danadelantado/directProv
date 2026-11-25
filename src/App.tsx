@@ -28,6 +28,8 @@ import { Login } from './components/Login';
 import { AdminPanel } from './components/AdminPanel';
 import { Register } from './components/Register';
 import { ResetPassword } from './components/ResetPassword';
+import { supabase } from './supabaseClient'; 
+import { UpdatePassword } from './components/UpdatePassword';
 
 const STORAGE_KEY = 'cat_carriers_logistica_v82';
 const DELETED_CARRIERS_KEY = 'cat_deleted_carrier_ids_v1';
@@ -148,11 +150,6 @@ function mergeNewPresentations(targetList: Carrier[], deletedStore: DeletedStore
 
 /**
  * Intelligent Carrier Reconciler
- * - STRICT DELETION INTEGRITY: Once a user deletes a carrier, it is PERMANENTLY excluded.
- * - ALL WCA CARRIERS ARE SET TO 'Performer' AS REQUESTED.
- * - Recovers user's manual edits (WhatsApp group names, custom emails, notes, phones).
- * - Never re-adds carriers removed by the user.
- * - Incorporates new presentations without creating duplicates.
  */
 function loadAndReconcileCarriers(): Carrier[] {
   try {
@@ -162,12 +159,11 @@ function loadAndReconcileCarriers(): Carrier[] {
     const raw81 = localStorage.getItem('cat_carriers_logistica_v81');
     const raw80 = localStorage.getItem('cat_carriers_logistica_v80');
 
-    // PRIORITY 1: If current storage (STORAGE_KEY / v82) exists, it is the authoritative live database!
+    // PRIORITY 1
     if (raw82) {
       try {
         const parsed82: Carrier[] = JSON.parse(raw82);
         if (Array.isArray(parsed82) && parsed82.length > 0) {
-          // Detect any carrier from INITIAL_CARRIERS omitted in parsed82 -> user deleted it!
           const active82Ids = new Set(parsed82.map((c) => c.id));
           const active82Names = new Set(parsed82.map((c) => normalizeText(c.name)));
 
@@ -182,7 +178,6 @@ function loadAndReconcileCarriers(): Carrier[] {
           });
           saveDeletedStore(deletedStore);
 
-          // Filter out any deleted carrier and map WCA carriers to 'Performer'
           const liveList: Carrier[] = parsed82
             .filter((c) => !isCarrierDeleted(c.id, c.name, deletedStore) && c.active !== false)
             .map((c) => {
@@ -197,10 +192,8 @@ function loadAndReconcileCarriers(): Carrier[] {
               };
             });
 
-          // Merge new presentations (if not already deleted)
           const merged = mergeNewPresentations(liveList, deletedStore);
 
-          // Guarantee WCA carriers have altaEntity: 'Performer'
           const finalCarriers = merged
             .filter((c) => !isCarrierDeleted(c.id, c.name, deletedStore))
             .map((c) => {
@@ -218,7 +211,7 @@ function loadAndReconcileCarriers(): Carrier[] {
       }
     }
 
-    // PRIORITY 2: Migration fallback from v81 or v80 if v82 does not exist yet
+    // PRIORITY 2
     const parsed81: Carrier[] | null = raw81 ? JSON.parse(raw81) : null;
     const parsed80: Carrier[] | null = raw80 ? JSON.parse(raw80) : null;
     const pristineSource: Carrier[] | null =
@@ -290,7 +283,7 @@ function loadAndReconcileCarriers(): Carrier[] {
       return finalCarriers;
     }
 
-    // PRIORITY 3: Clean fresh install fallback
+    // PRIORITY 3
     const initialList = INITIAL_CARRIERS
       .filter((c) => !isCarrierDeleted(c.id, c.name, deletedStore))
       .map((c) => {
@@ -335,8 +328,27 @@ export default function App() {
   const [showRegister, setShowRegister] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
 
-  // Primary Carriers State with LocalStorage
+  // Estado único de proveedores
   const [carriers, setCarriers] = useState<Carrier[]>(loadAndReconcileCarriers);
+
+  // Descargar proveedores de Supabase al cargar
+  useEffect(() => {
+    const cargarProveedores = async () => {
+      const { data, error } = await supabase
+        .from('carriers')
+        .select('data');
+
+      if (error) {
+        console.error("Error al descargar proveedores:", error);
+      } else if (data && data.length > 0) {
+        // Corrección del tipo "any" aquí
+        const proveedoresLimpios = data.map((fila: any) => fila.data);
+        setCarriers(proveedoresLimpios);
+      }
+    };
+
+    cargarProveedores();
+  }, []);
 
   useEffect(() => {
     try {
@@ -345,6 +357,24 @@ export default function App() {
       console.error('Error saving carriers:', e);
     }
   }, [carriers]);
+
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveringPassword(true);
+      }
+    });
+  }, []);
+
+  // Si está en proceso de recuperación, muestras la vista de actualizar contraseña en lugar del login
+  if (isRecoveringPassword) {
+    return <UpdatePassword onSuccess={() => {
+      setIsRecoveringPassword(false);
+      window.location.href = '/'; // Regresar al inicio limpio
+    }} />;
+  }
 
   // UI View Mode (Grid vs Table)
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
@@ -507,33 +537,42 @@ export default function App() {
   };
 
   // Save new carrier evaluation
-  const handleSaveEvaluation = (carrierId: string, newEvaluation: CarrierEvaluation) => {
+  const handleSaveEvaluation = async (carrierId: string, newEvaluation: CarrierEvaluation) => {
+    
+    // 1. Encontrar el carrier actual para modificarlo
+    const carrier = carriers.find(c => c.id === carrierId);
+    if (!carrier) return;
+
+    const currentEvals = carrier.evaluations || [];
+    const updatedEvals = [newEvaluation, ...currentEvals];
+    
+    // Calcular nuevo promedio sobre 10
+    const totalScore = updatedEvals.reduce((acc, curr) => acc + curr.overallScore, 0);
+    const newAverage = Number((totalScore / updatedEvals.length).toFixed(1));
+
+    const updatedCarrier = {
+      ...carrier,
+      evaluations: updatedEvals,
+      scoreOutOf10: newAverage,
+    };
+
+    const { error } = await supabase
+      .from('carriers')
+      .update({ data: updatedCarrier })
+      .eq('id', carrierId);
+
+    if (error) {
+      console.error("Error al guardar evaluación en Supabase:", error);
+      alert("Hubo un error al guardar la evaluación en la nube.");
+      return;
+    }
+
     setCarriers((prevCarriers) =>
-      prevCarriers.map((c) => {
-        if (c.id !== carrierId) return c;
-        const currentEvals = c.evaluations || [];
-        const updatedEvals = [newEvaluation, ...currentEvals];
-        // Calculate new score out of 10 average
-        const totalScore = updatedEvals.reduce((acc, curr) => acc + curr.overallScore, 0);
-        const newAverage = Number((totalScore / updatedEvals.length).toFixed(1));
-        return {
-          ...c,
-          evaluations: updatedEvals,
-          scoreOutOf10: newAverage,
-        };
-      })
+      prevCarriers.map((c) => (c.id === carrierId ? updatedCarrier : c))
     );
-    // Also update selected carrier in modal if open
+
     if (selectedForEvaluation && selectedForEvaluation.id === carrierId) {
-      const currentEvals = selectedForEvaluation.evaluations || [];
-      const updatedEvals = [newEvaluation, ...currentEvals];
-      const totalScore = updatedEvals.reduce((acc, curr) => acc + curr.overallScore, 0);
-      const newAverage = Number((totalScore / updatedEvals.length).toFixed(1));
-      setSelectedForEvaluation({
-        ...selectedForEvaluation,
-        evaluations: updatedEvals,
-        scoreOutOf10: newAverage,
-      });
+      setSelectedForEvaluation(updatedCarrier);
     }
   };
 
@@ -561,63 +600,48 @@ export default function App() {
   };
 
   // Confirmed delete ("Sí") -> permanently remove carrier from catalog and database
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!carrierToDelete) return;
     const targetId = carrierToDelete.id;
     const targetName = carrierToDelete.name;
-    const targetNorm = normalizeText(targetName);
 
-    // 1. Immediately track deleted ID and normalized name so it is NEVER revived
     try {
-      const store = getDeletedStore();
-      if (!store.ids.includes(targetId)) store.ids.push(targetId);
-      if (targetNorm && !store.names.includes(targetNorm)) store.names.push(targetNorm);
-      saveDeletedStore(store);
+      // 1. ELIMINAR DE SUPABASE
+      const { error } = await supabase
+        .from('carriers')
+        .delete()
+        .eq('id', targetId);
+
+      if (error) {
+        console.error('Error al eliminar de Supabase:', error);
+        setDeleteToast(`Error al eliminar en la nube: ${error.message}`);
+        return;
+      }
+
+      // 2. Actualizar estado de React y cerrar modales
+      const updated = carriers.filter((c) => c.id !== targetId);
+      setCarriers(updated);
+      setComparedCarrierIds((prev) => prev.filter((id) => id !== targetId));
+
+      if (selectedForServiceInfo?.id === targetId) setSelectedForServiceInfo(null);
+      if (selectedForQuote?.id === targetId) setSelectedForQuote(null);
+      if (selectedForEvaluation?.id === targetId) setSelectedForEvaluation(null);
+      if (carrierToEdit?.id === targetId) {
+        setCarrierToEdit(null);
+        setIsFormModalOpen(false);
+      }
+
+      setCarrierToDelete(null);
+
+      // 3. Mostrar notificación
+      setDeleteToast(`El proveedor "${targetName}" ha sido eliminado permanentemente de la nube.`);
+      setTimeout(() => {
+        setDeleteToast(null);
+      }, 4500);
+      
     } catch (e) {
-      console.error('Error saving deleted carrier id and name:', e);
+      console.error('Error en proceso de eliminación:', e);
     }
-
-    // 2. Remove from carriers list and persist directly to localStorage
-    const updated = carriers.filter((c) => c.id !== targetId && normalizeText(c.name) !== targetNorm);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-
-      // Also clean older backup keys so legacy readers cannot revive it
-      ['cat_carriers_logistica_v81', 'cat_carriers_logistica_v80'].forEach((key) => {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          try {
-            const list: Carrier[] = JSON.parse(raw);
-            const filtered = list.filter((c) => c.id !== targetId && normalizeText(c.name) !== targetNorm);
-            localStorage.setItem(key, JSON.stringify(filtered));
-          } catch (err) {}
-        }
-      });
-    } catch (e) {
-      console.error('Error saving updated carriers:', e);
-    }
-
-    // 3. Update React states
-    setCarriers(updated);
-    setComparedCarrierIds((prev) => prev.filter((id) => id !== targetId));
-
-    // 4. Close any active modals related to this carrier
-    if (selectedForServiceInfo?.id === targetId) setSelectedForServiceInfo(null);
-    if (selectedForQuote?.id === targetId) setSelectedForQuote(null);
-    if (selectedForEvaluation?.id === targetId) setSelectedForEvaluation(null);
-    if (carrierToEdit?.id === targetId) {
-      setCarrierToEdit(null);
-      setIsFormModalOpen(false);
-    }
-
-    // 5. Close delete confirmation modal
-    setCarrierToDelete(null);
-
-    // 6. Show friendly confirmation notification
-    setDeleteToast(`El proveedor "${targetName}" ha sido eliminado permanentemente del catálogo.`);
-    setTimeout(() => {
-      setDeleteToast(null);
-    }, 4500);
   };
 
   // Cancel deletion ("No") -> return directly to "inicio"
@@ -724,6 +748,8 @@ export default function App() {
         onResetData={handleResetData}
         onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
       />
+
+      
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

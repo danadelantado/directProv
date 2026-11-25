@@ -1,20 +1,18 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { PerformerLogo } from './PerformerLogo';
+import { supabase } from '../supabaseClient'; 
 
-const CORPORATE_DOMAINS = ['@performerlogistics.com.mx', '@looper.com.mx'];
+const CORPORATE_DOMAINS = ['@performerlogistics.com.mx', '@looper.com.mx', '@gmail.com'];
 
 export const Register: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchToLogin }) => {
-  const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [generatedCode, setGeneratedCode] = useState('');
-  const [enteredCode, setEnteredCode] = useState('');
   const [error, setError] = useState('');
-  const { register } = useAuth();
+  const [success, setSuccess] = useState(false); 
+  const [loading, setLoading] = useState(false);
 
-  const handleRequestCode = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -28,24 +26,25 @@ export const Register: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchTo
       return;
     }
 
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
-    setGeneratedCode(code);
-    setStep(2);
-    alert(`SIMULACIÓN DE CORREO (Registro)\n\nPara: ${email}\nCódigo de verificación: ${code}`);
-  };
+    setLoading(true);
 
-  const handleVerifyAndRegister = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (enteredCode !== generatedCode) {
-      setError('El código es incorrecto.');
-      return;
-    }
+    const { data, error } = await supabase.auth.signUp({
+      email: email,
+      password: password,
+      options: {
+        data: {
+          full_name: name,
+        }
+      }
+    });
 
-    const success = register(email, name, password);
-    if (!success) {
-      setError('Este correo ya está registrado.');
-      setStep(1);
+    if (error) {
+      setError('Error al registrar: ' + error.message);
+    } else {
+      setSuccess(true);
     }
+    
+    setLoading(false);
   };
 
   return (
@@ -55,39 +54,42 @@ export const Register: React.FC<{ onSwitchToLogin: () => void }> = ({ onSwitchTo
           <div className="bg-[#310052] p-4 rounded-xl"><PerformerLogo size="lg" variant="light" /></div>
         </div>
         
-        <h2 className="text-2xl font-black text-center text-[#310052] mb-6">
-          {step === 1 ? 'Crear Cuenta' : 'Verificar Correo'}
-        </h2>
+        <h2 className="text-2xl font-black text-center text-[#310052] mb-6">Crear Cuenta</h2>
         
         {error && <div className="mb-4 p-3 bg-rose-50 text-rose-600 rounded-lg text-sm text-center font-bold">{error}</div>}
-
-        {step === 1 && (
-          <form onSubmit={handleRequestCode} className="space-y-4">
+        
+        {success ? (
+          <div className="text-center space-y-4">
+            <div className="p-4 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-200">
+              <h3 className="font-bold text-lg mb-2">¡Registro exitoso!</h3>
+              <p className="text-sm">Hemos enviado un correo a <strong>{email}</strong>.</p>
+              <p className="text-sm mt-2">Por favor, haz clic en el enlace del correo para verificar tu cuenta antes de iniciar sesión.</p>
+            </div>
+            <button onClick={onSwitchToLogin} className="w-full py-3 bg-[#310052] text-white font-bold rounded-xl shadow-md">
+              Ir a Iniciar Sesión
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleRegister} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Nombre Completo</label>
-              <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl" />
+              <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl" disabled={loading} />
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Correo Empresarial</label>
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl" />
+              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl" disabled={loading} />
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Contraseña</label>
-              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl" />
+              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl" disabled={loading} />
             </div>
-            <button type="submit" className="w-full mt-6 py-3 bg-[#310052] text-white font-bold rounded-xl shadow-md">Enviar código de verificación</button>
+            <button type="submit" disabled={loading} className="w-full mt-6 py-3 bg-[#310052] text-white font-bold rounded-xl shadow-md disabled:opacity-50">
+              {loading ? 'Creando cuenta...' : 'Registrarme'}
+            </button>
           </form>
         )}
 
-        {step === 2 && (
-          <form onSubmit={handleVerifyAndRegister} className="space-y-4">
-            <p className="text-sm text-slate-600 text-center">Código enviado a <strong>{email}</strong></p>
-            <input type="text" required maxLength={4} value={enteredCode} onChange={(e) => setEnteredCode(e.target.value)} className="w-full px-4 py-3 text-center text-2xl font-black bg-slate-50 border rounded-xl" placeholder="0000" />
-            <button type="submit" className="w-full mt-6 py-3 bg-[#D2E603] text-[#310052] font-black rounded-xl shadow-md">Verificar y Registrarme</button>
-          </form>
-        )}
-
-        {step === 1 && (
+        {!success && (
           <button onClick={onSwitchToLogin} className="w-full mt-6 text-sm text-[#310052] font-bold hover:underline">¿Ya tienes cuenta? Inicia sesión aquí</button>
         )}
       </div>

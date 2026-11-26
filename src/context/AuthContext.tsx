@@ -15,7 +15,7 @@ interface AuthContextType {
   logout: () => void;
   changeRole: (email: string, newRole: UserRole) => void;
   deleteUser: (email: string) => void;
-  
+
   // Funciones heredadas de UI
   login: (email: string, pass: string) => boolean;
   register: (email: string, name: string, pass: string) => boolean;
@@ -24,17 +24,23 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
 
-  // Función maestra: Verifica si el usuario existe en la "Lista VIP" (perfiles)
-  const checkAccess = async (sessionUser: any) => {
+  // Verifica que el usuario autenticado tenga fila en 'perfiles'
+  const checkAccess = async (sessionUser: { id: string }) => {
     const { data: perfil, error } = await supabase
       .from('perfiles')
       .select('*')
-      .eq('email', sessionUser.email)
-      .single();
+      .eq('id', sessionUser.id)
+      .maybeSingle();
+
+    // Error técnico: no es lo mismo que "cuenta eliminada"
+    if (error) {
+      console.error('Error al consultar perfil en Supabase:', error);
+      return;
+    }
 
     if (perfil) {
       setUser({
@@ -43,40 +49,53 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
         role: perfil.role,
       });
     } else {
-      await supabase.auth.signOut();
+      // Consulta correcta pero sin fila: cuenta eliminada o desactivada
+      await supabase.auth.signOut({ scope: 'local' });
       setUser(null);
-      throw new Error("Esta cuenta ha sido desactivada o eliminada por el administrador.");
     }
   };
 
+  // 1. Escuchar la sesión (incluye el evento inicial, no hace falta getSession)
   useEffect(() => {
-    // 1. Revisar sesión activa
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) checkAccess(session.user);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const sessionUser = session.user;
+        // setTimeout evita bloquear el callback de auth con llamadas a Supabase
+        setTimeout(() => {
+          checkAccess(sessionUser);
+        }, 0);
+      } else {
+        setUser(null);
+        setUsers([]);
+      }
     });
-
-    // 2. Escuchar cambios
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) checkAccess(session.user);
-      else setUser(null);
-    });
-
-    // 3. Cargar la lista completa de usuarios para tu AdminPanel
-    const cargarUsuarios = async () => {
-      const { data } = await supabase.from('perfiles').select('*');
-      if (data) setUsers(data as User[]);
-    };
-    
-    cargarUsuarios();
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // 2. Cargar la lista de usuarios solo cuando hay un admin con sesión
+  useEffect(() => {
+    if (user?.role !== 'admin') {
+      setUsers([]);
+      return;
+    }
+
+    const cargarUsuarios = async () => {
+      const { data, error } = await supabase.from('perfiles').select('*');
+      if (error) console.error('Error al cargar usuarios:', error);
+      else if (data) setUsers(data as User[]);
+    };
+
+    cargarUsuarios();
+  }, [user?.role]);
 
   const logout = async () => {
     await supabase.auth.signOut();
   };
 
-  // Función real para cambiar roles desde el Admin Panel
+  // Cambiar roles desde el Admin Panel
   const changeRole = async (email: string, newRole: UserRole) => {
     const { error } = await supabase
       .from('perfiles')
@@ -87,25 +106,24 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       setUsers((prev) => prev.map((u) => (u.email === email ? { ...u, role: newRole } : u)));
       if (user?.email === email) setUser({ ...user, role: newRole });
     } else {
-      console.error("Error al cambiar rol:", error);
+      console.error('Error al cambiar rol:', error);
     }
   };
 
-  // Función real para eliminar usuarios desde el Admin Panel
+  // Eliminar usuarios desde el Admin Panel
   const deleteUser = async (email: string) => {
-    const confirmar = window.confirm(`¿Estás segura de eliminar permanentemente el acceso de ${email}?`);
+    const confirmar = window.confirm(
+      `¿Estás segura de eliminar permanentemente el acceso de ${email}?`
+    );
     if (!confirmar) return;
 
-    const { error } = await supabase
-      .from('perfiles')
-      .delete()
-      .eq('email', email);
+    const { error } = await supabase.from('perfiles').delete().eq('email', email);
 
     if (!error) {
       setUsers((prev) => prev.filter((u) => u.email !== email));
       if (user?.email === email) logout();
     } else {
-      console.error("Error al eliminar usuario:", error);
+      console.error('Error al eliminar usuario:', error);
     }
   };
 
@@ -114,7 +132,9 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   const resetPassword = () => true;
 
   return (
-    <AuthContext.Provider value={{ user, users, login, register, logout, changeRole, resetPassword, deleteUser }}>
+    <AuthContext.Provider
+      value={{ user, users, login, register, logout, changeRole, resetPassword, deleteUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

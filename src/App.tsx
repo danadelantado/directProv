@@ -330,25 +330,26 @@ export default function App() {
 
   // Estado único de proveedores
   const [carriers, setCarriers] = useState<Carrier[]>(loadAndReconcileCarriers);
+  
+// Descargar proveedores de Supabase cuando haya sesión
+useEffect(() => {
+  if (!user) return; // sin sesión no se consulta nada
 
-  // Descargar proveedores de Supabase al cargar
-  useEffect(() => {
-    const cargarProveedores = async () => {
-      const { data, error } = await supabase
-        .from('carriers')
-        .select('data');
+  const cargarProveedores = async () => {
+    const { data, error } = await supabase
+      .from('carriers')
+      .select('data');
 
-      if (error) {
-        console.error("Error al descargar proveedores:", error);
-      } else if (data && data.length > 0) {
-        // Corrección del tipo "any" aquí
-        const proveedoresLimpios = data.map((fila: any) => fila.data);
-        setCarriers(proveedoresLimpios);
-      }
-    };
+    if (error) {
+      console.error('Error al descargar proveedores:', error);
+    } else if (data && data.length > 0) {
+      const proveedoresLimpios = data.map((fila: any) => fila.data);
+      setCarriers(proveedoresLimpios);
+    }
+  };
 
-    cargarProveedores();
-  }, []);
+  cargarProveedores();
+}, [user]);
 
   useEffect(() => {
     try {

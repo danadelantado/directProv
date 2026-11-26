@@ -33,14 +33,26 @@ export const Login: React.FC<{
           .eq('id', data.user.id)
           .maybeSingle();
 
-        if (perfilError) {
-          console.error('Error al consultar perfil en Supabase:', perfilError);
-        }
+if (data?.user) {
+  const { data: perfil, error: perfilError } = await supabase
+    .from('perfiles')
+    .select('id, email, name, role')
+    .eq('id', data.user.id)
+    .maybeSingle();
 
-        if (!perfil) {
-          await supabase.auth.signOut();
-          throw new Error('Esta cuenta ha sido desactivada o eliminada por el administrador.');
-        }
+  // Error técnico: no es lo mismo que "cuenta eliminada"
+  if (perfilError) {
+    console.error('Error al consultar perfil en Supabase:', perfilError);
+    await supabase.auth.signOut({ scope: 'local' });
+    throw new Error('No se pudo verificar tu perfil. Intenta de nuevo en unos minutos.');
+  }
+
+  // Consulta correcta, pero no existe la fila
+  if (!perfil) {
+    await supabase.auth.signOut({ scope: 'local' });
+    throw new Error('Esta cuenta ha sido desactivada o eliminada por el administrador.');
+  }
+}
       }
 
       window.location.reload();
